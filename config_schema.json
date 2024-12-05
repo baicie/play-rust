@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "source_db": {
+      "type": "object",
+      "properties": {
+        "url": { "type": "string", "pattern": "^postgres://.*" },
+        "table": { "type": "string" }
+      },
+      "required": ["url", "table"]
+    },
+    "target_db": {
+      "type": "object",
+      "properties": {
+        "url": { "type": "string", "pattern": "^mysql://.*" },
+        "table": { "type": "string" }
+      },
+      "required": ["url", "table"]
+    },
+    "options": {
+      "type": "object",
+      "properties": {
+        "batch_size": { "type": "integer", "minimum": 1 },
+        "sync_interval": { "type": "integer", "minimum": 1 }
+      }
+    }
+  },
+  "required": ["source_db", "target_db"]
+}

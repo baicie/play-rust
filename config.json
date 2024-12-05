@@ -1,0 +1,11 @@
+{
+  "$schema": "./config_schema.json",
+  "source_db": {
+    "url": "postgres://lzw:a123456@localhost:5432/mydb2",
+    "table": "users"
+  },
+  "target_db": {
+    "url": "mysql://root:893425865lzw@localhost:3306/mydb",
+    "table": "users2"
+  }
+}
