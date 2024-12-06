@@ -132,6 +132,7 @@ mod tests {
         // 创建并初始化 sink
         let config = ConnectorConfig {
             name: "test_sink".to_string(),
+            connector_type: "postgres".to_string(),
             properties: HashMap::from_iter(vec![
                 (
                     "url".to_string(),

@@ -137,6 +137,7 @@ mod tests {
     async fn test_source_init() {
         let config = ConnectorConfig {
             name: "test_source".to_string(),
+            connector_type: "mysql".to_string(),
             properties: HashMap::from_iter(vec![
                 (
                     "url".to_string(),
@@ -180,6 +181,7 @@ mod tests {
         // 创建并初始化 source
         let config = ConnectorConfig {
             name: "test_source".to_string(),
+            connector_type: "mysql".to_string(),
             properties: HashMap::from_iter(vec![
                 (
                     "url".to_string(),

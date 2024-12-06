@@ -36,5 +36,14 @@ pub trait Transform: Send + Sync {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectorConfig {
     pub name: String,
+    pub connector_type: String,
     pub properties: HashMap<String, serde_json::Value>,
+}
+
+impl From<serde_json::Map<String, serde_json::Value>> for Record {
+    fn from(map: serde_json::Map<String, serde_json::Value>) -> Self {
+        Record {
+            fields: HashMap::from_iter(map),
+        }
+    }
 }

@@ -1,37 +1,22 @@
 {
+  "$schema": "./config.schema.json",
   "job_name": "mysql_to_postgres",
   "source": {
     "name": "mysql_source",
     "connector_type": "mysql",
     "properties": {
-      "url": "mysql://user:pass@localhost:3306/db",
+      "url": "mysql://root:password@localhost:3306/test",
       "table": "source_table",
-      "batch_size": 1000,
-      "max_connections": 10
+      "batch_size": 1000
     }
   },
-  "transforms": [
-    {
-      "name": "rename_fields",
-      "transform_type": "field_rename",
-      "properties": {
-        "mappings": {
-          "old_name": "new_name",
-          "old_id": "new_id"
-        }
-      }
-    }
-  ],
   "sink": {
     "name": "postgres_sink",
     "connector_type": "postgres",
     "properties": {
-      "url": "postgres://user:pass@localhost:5432/db",
-      "table": "target_table"
+      "url": "postgres://postgres:password@localhost:5432/test",
+      "table": "target_table",
+      "max_connections": 5
     }
-  },
-  "job": {
-    "batch_size": 1000,
-    "channel_size": 10
   }
 }

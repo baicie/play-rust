@@ -4,10 +4,11 @@ mod plugin;
 mod runtime;
 
 use config::Config;
-use dbsync_core::{connector::ConnectorConfig, job::SyncJob};
+use dbsync_core::{connector::Record, error::Error, job::SyncJob};
+use dbsync_mysql::{MySQLSink, MySQLSource};
+use dbsync_postgres::{PostgresSink, PostgresSource};
 use dbsync_transforms::get_transform_factory;
 use plugin::PluginManager;
-use runtime::context::RuntimeContext;
 use tracing::{error, info};
 
 #[tokio::main]
@@ -18,15 +19,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting dbsync");
 
     // 初始化插件管理器
-    let plugin_manager = PluginManager::new();
+    let mut plugin_manager = PluginManager::new();
+
+    // 注册内置连接器
+    plugin_manager.register_source("mysql", |config| Ok(Box::new(MySQLSource::new(config)?)));
+    plugin_manager.register_source("postgres", |config| {
+        Ok(Box::new(PostgresSource::new(config)?))
+    });
+    plugin_manager.register_sink("mysql", |config| Ok(Box::new(MySQLSink::new(config)?)));
+    plugin_manager.register_sink("postgres", |config| {
+        Ok(Box::new(PostgresSink::new(config)?))
+    });
+
+    // 注册转换器
+    dbsync_transforms::register_transforms();
 
     // 加载配置
     let config = std::fs::read_to_string("config.json")?;
     let config: Config = serde_json::from_str(&config)?;
 
-    // 创建连接器
-    let source = dbsync_mysql::MySQLSource::new(config.source);
-    let sink = dbsync_postgres::PostgresSink::new(config.sink);
+    // 通过插件系统创建连接器
+    let source = plugin_manager.create_source(config.source)?;
+    let sink = plugin_manager.create_sink(config.sink)?;
 
     // 创建转换器
     let transforms = config
@@ -41,12 +55,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ))
                 })?;
 
-            factory(transform_config.properties)
+            factory(Record::from(
+                transform_config
+                    .properties
+                    .as_object()
+                    .ok_or_else(|| {
+                        Error::Config("Transform properties must be an object".to_string())
+                    })?
+                    .clone(),
+            ))
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<Result<Vec<_>, Error>>()?;
 
     // 创建作业
-    let job = SyncJob::new(Box::new(source), transforms, Box::new(sink));
+    let mut job = SyncJob::new(source, transforms, sink);
 
     // 运行作业
     info!("Starting sync job");
