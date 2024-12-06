@@ -1,0 +1,7 @@
+# 开启所有 clippy lint
+warn-by-default = true
+
+# 一些自定义规则
+cognitive-complexity-threshold = 30
+too-many-arguments-threshold = 7
+type-complexity-threshold = 250 

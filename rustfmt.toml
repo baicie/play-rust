@@ -1,0 +1,15 @@
+# 基本格式化规则
+max_width = 100
+tab_spaces = 4
+edition = "2021"
+
+# 导入格式化
+imports_granularity = "Module"
+group_imports = "StdExternalCrate"
+
+# 其他格式化选项
+format_code_in_doc_comments = true
+format_macro_matchers = true
+format_macro_bodies = true
+format_strings = true
+wrap_comments = true 
