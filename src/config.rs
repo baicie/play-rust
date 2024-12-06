@@ -1,26 +1,17 @@
-use serde::Deserialize;
-use std::fs::File;
-use std::io::Read;
-use std::path::Path;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
-#[derive(Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
-    pub source_db: DbConfig,
-    pub target_db: DbConfig,
-}
-
-#[derive(Deserialize)]
-pub struct DbConfig {
-    pub url: String,
-    pub table: String,
+    pub job_name: String,
+    pub source: ConnectorConfig,
+    pub sink: ConnectorConfig,
+    pub properties: HashMap<String, serde_json::Value>,
 }
 
 impl Config {
-    pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
-        let mut file = File::open(path)?;
-        let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
-        let config: Config = serde_json::from_str(&contents)?;
-        Ok(config)
+    pub fn load_from_file(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let content = std::fs::read_to_string(path)?;
+        Ok(serde_json::from_str(&content)?)
     }
 }

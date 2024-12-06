@@ -1,0 +1,15 @@
+[package]
+name = "dbsync-postgres"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dbsync-core = { path = "../../core" }
+async-trait = { workspace = true }
+sqlx = { workspace = true, features = ["postgres"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+jsonschema = { workspace = true }
+lazy_static = { workspace = true } 

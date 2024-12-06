@@ -1,0 +1,15 @@
+[package]
+name = "dbsync-kafka"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dbsync-core = { path = "../../core" }
+async-trait = { workspace = true }
+rdkafka = { version = "0.37.0", features = ["ssl", "sasl"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+jsonschema = { workspace = true }
+lazy_static = { workspace = true } 

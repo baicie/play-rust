@@ -1,30 +1,44 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
+  "required": ["job_name", "source", "sink"],
   "properties": {
-    "source_db": {
+    "job_name": { "type": "string" },
+    "source": {
       "type": "object",
+      "required": ["name", "connector_type", "properties"],
       "properties": {
-        "url": { "type": "string", "pattern": "^postgres://.*" },
-        "table": { "type": "string" }
-      },
-      "required": ["url", "table"]
+        "name": { "type": "string" },
+        "connector_type": {
+          "type": "string",
+          "enum": ["mysql", "postgres", "kafka"]
+        },
+        "properties": {
+          "oneOf": [
+            { "$ref": "./connectors/mysql/schema/source.json" },
+            { "$ref": "./connectors/postgres/schema/source.json" },
+            { "$ref": "./connectors/kafka/schema/source.json" }
+          ]
+        }
+      }
     },
-    "target_db": {
+    "sink": {
       "type": "object",
+      "required": ["name", "connector_type", "properties"],
       "properties": {
-        "url": { "type": "string", "pattern": "^mysql://.*" },
-        "table": { "type": "string" }
-      },
-      "required": ["url", "table"]
-    },
-    "options": {
-      "type": "object",
-      "properties": {
-        "batch_size": { "type": "integer", "minimum": 1 },
-        "sync_interval": { "type": "integer", "minimum": 1 }
+        "name": { "type": "string" },
+        "connector_type": {
+          "type": "string",
+          "enum": ["mysql", "postgres", "kafka"]
+        },
+        "properties": {
+          "oneOf": [
+            { "$ref": "./connectors/mysql/schema/sink.json" },
+            { "$ref": "./connectors/postgres/schema/sink.json" },
+            { "$ref": "./connectors/kafka/schema/sink.json" }
+          ]
+        }
       }
     }
-  },
-  "required": ["source_db", "target_db"]
+  }
 }

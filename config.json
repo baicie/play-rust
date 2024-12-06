@@ -1,11 +1,37 @@
 {
-  "$schema": "./config_schema.json",
-  "source_db": {
-    "url": "postgres://lzw:a123456@localhost:5432/mydb2",
-    "table": "users"
+  "job_name": "mysql_to_postgres",
+  "source": {
+    "name": "mysql_source",
+    "connector_type": "mysql",
+    "properties": {
+      "url": "mysql://user:pass@localhost:3306/db",
+      "table": "source_table",
+      "batch_size": 1000,
+      "max_connections": 10
+    }
   },
-  "target_db": {
-    "url": "mysql://root:893425865lzw@localhost:3306/mydb",
-    "table": "users2"
+  "transforms": [
+    {
+      "name": "rename_fields",
+      "transform_type": "field_rename",
+      "properties": {
+        "mappings": {
+          "old_name": "new_name",
+          "old_id": "new_id"
+        }
+      }
+    }
+  ],
+  "sink": {
+    "name": "postgres_sink",
+    "connector_type": "postgres",
+    "properties": {
+      "url": "postgres://user:pass@localhost:5432/db",
+      "table": "target_table"
+    }
+  },
+  "job": {
+    "batch_size": 1000,
+    "channel_size": 10
   }
 }

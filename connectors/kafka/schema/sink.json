@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Kafka Sink Configuration",
+  "type": "object",
+  "required": ["brokers", "topic"],
+  "properties": {
+    "brokers": {
+      "type": "string",
+      "description": "Kafka brokers list"
+    },
+    "topic": {
+      "type": "string",
+      "description": "Kafka topic name"
+    },
+    "buffer_size": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 10000,
+      "description": "Producer buffer size"
+    }
+  }
+}

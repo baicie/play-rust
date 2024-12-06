@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MySQL Connector Configuration",
+  "type": "object",
+  "required": ["url", "table"],
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "MySQL connection URL",
+      "pattern": "^mysql://"
+    },
+    "table": {
+      "type": "string",
+      "description": "Table name"
+    },
+    "batch_size": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1000,
+      "description": "Number of records to read/write in one batch"
+    },
+    "max_connections": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 10,
+      "description": "Maximum number of database connections"
+    }
+  }
+}
