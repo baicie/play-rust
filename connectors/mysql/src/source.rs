@@ -1,13 +1,16 @@
 use crate::config::MySQLSourceConfig;
+use crate::type_converter::MySQLTypeConverter;
 use async_trait::async_trait;
 use dbsync_core::{
     connector::{ConnectorConfig, DataBatch, Record, Source},
     error::{Error, Result},
+    types::TypeConverter,
 };
 use sqlx::{mysql::MySqlPool, Column, Row, TypeInfo};
 use std::collections::HashMap;
 use tracing::info;
 
+#[derive(Clone)]
 pub struct MySQLSource {
     config: MySQLSourceConfig,
     pool: Option<MySqlPool>,
@@ -67,6 +70,7 @@ impl Source for MySQLSource {
 
         self.current_offset += rows.len() as i64;
 
+        let type_converter = MySQLTypeConverter;
         let records = rows
             .into_iter()
             .map(|row| {
@@ -75,35 +79,29 @@ impl Source for MySQLSource {
 
                 for col in columns {
                     let name = col.name().to_string();
-                    let value = match col.type_info().name() {
-                        "INT" | "BIGINT" => row
-                            .try_get::<i64, _>(col.ordinal())
-                            .map(|n| serde_json::Value::Number(n.into()))
-                            .unwrap_or(serde_json::Value::Null),
-                        "VARCHAR" | "TEXT" => row
-                            .try_get::<String, _>(col.ordinal())
-                            .map(serde_json::Value::String)
-                            .unwrap_or(serde_json::Value::Null),
-                        "FLOAT" | "DOUBLE" => row
-                            .try_get::<f64, _>(col.ordinal())
-                            .map(|n| {
-                                serde_json::Number::from_f64(n)
-                                    .map(serde_json::Value::Number)
-                                    .unwrap_or(serde_json::Value::Null)
-                            })
-                            .unwrap_or(serde_json::Value::Null),
-                        "BOOLEAN" => row
-                            .try_get::<bool, _>(col.ordinal())
-                            .map(serde_json::Value::Bool)
-                            .unwrap_or(serde_json::Value::Null),
-                        _ => serde_json::Value::Null,
-                    };
+                    let type_name = col.type_info().name();
+
+                    // 获取原始字符串值
+                    let raw_value = match type_name {
+                        "INT" | "BIGINT" => {
+                            row.try_get::<i64, _>(col.ordinal()).map(|v| v.to_string())
+                        }
+                        "VARCHAR" | "TEXT" => row.try_get::<String, _>(col.ordinal()),
+                        "FLOAT" | "DOUBLE" => {
+                            row.try_get::<f64, _>(col.ordinal()).map(|v| v.to_string())
+                        }
+                        "BOOLEAN" => row.try_get::<bool, _>(col.ordinal()).map(|v| v.to_string()),
+                        _ => row.try_get::<String, _>(col.ordinal()),
+                    }
+                    .unwrap_or_else(|_| "NULL".to_string());
+
+                    // 转换为统一的 JSON 值
+                    let value = type_converter.convert_to_value(&raw_value, type_name)?;
                     fields.insert(name, value);
                 }
-
-                Record { fields }
+                Ok(Record { fields })
             })
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(Some(DataBatch { records }))
     }
@@ -132,6 +130,99 @@ impl Source for MySQLSource {
         } else {
             Err(Error::Read("Failed to get table schema".into()))
         }
+    }
+
+    fn clone_box(&self) -> Box<dyn Source> {
+        Box::new(self.clone())
+    }
+
+    async fn get_total_records(&self) -> Result<i64> {
+        let pool = self
+            .pool
+            .as_ref()
+            .ok_or_else(|| Error::Connection("Not connected".into()))?;
+        let row = sqlx::query(&format!(
+            "SELECT COUNT(*) as count FROM {}",
+            self.config.table
+        ))
+        .fetch_one(pool)
+        .await
+        .map_err(|e| Error::Read(e.to_string()))?;
+        Ok(row.get::<i64, _>("count"))
+    }
+
+    async fn get_id_range(&self) -> Result<(i64, i64)> {
+        let pool = self
+            .pool
+            .as_ref()
+            .ok_or_else(|| Error::Connection("Not connected".into()))?;
+        let row = sqlx::query(&format!(
+            "SELECT MIN(id) as min_id, MAX(id) as max_id FROM {}",
+            self.config.table
+        ))
+        .fetch_one(pool)
+        .await
+        .map_err(|e| Error::Read(e.to_string()))?;
+        Ok((row.get("min_id"), row.get("max_id")))
+    }
+
+    async fn read_batch_range(&mut self, start_id: i64, end_id: i64) -> Result<Option<DataBatch>> {
+        let pool = self
+            .pool
+            .as_ref()
+            .ok_or_else(|| Error::Connection("Not connected".into()))?;
+
+        let query = format!(
+            "SELECT * FROM {} WHERE id >= ? AND id < ? LIMIT ?",
+            self.config.table
+        );
+
+        let rows = sqlx::query(&query)
+            .bind(start_id)
+            .bind(end_id)
+            .bind(self.config.batch_size as i64)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| Error::Read(e.to_string()))?;
+
+        if rows.is_empty() {
+            return Ok(None);
+        }
+
+        let type_converter = MySQLTypeConverter;
+        let records = rows
+            .into_iter()
+            .map(|row| {
+                let mut fields = HashMap::new();
+                let columns = row.columns();
+
+                for col in columns {
+                    let name = col.name().to_string();
+                    let type_name = col.type_info().name();
+
+                    // 获取原始字符串值
+                    let raw_value = match type_name {
+                        "INT" | "BIGINT" => {
+                            row.try_get::<i64, _>(col.ordinal()).map(|v| v.to_string())
+                        }
+                        "VARCHAR" | "TEXT" => row.try_get::<String, _>(col.ordinal()),
+                        "FLOAT" | "DOUBLE" => {
+                            row.try_get::<f64, _>(col.ordinal()).map(|v| v.to_string())
+                        }
+                        "BOOLEAN" => row.try_get::<bool, _>(col.ordinal()).map(|v| v.to_string()),
+                        _ => row.try_get::<String, _>(col.ordinal()),
+                    }
+                    .unwrap_or_else(|_| "NULL".to_string());
+
+                    // 转换为统一的 JSON 值
+                    let value = type_converter.convert_to_value(&raw_value, type_name)?;
+                    fields.insert(name, value);
+                }
+                Ok(Record { fields })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(Some(DataBatch { records }))
     }
 }
 

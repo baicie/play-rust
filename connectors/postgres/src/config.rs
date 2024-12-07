@@ -24,12 +24,12 @@ pub struct PostgresSourceConfig {
     pub batch_size: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct PostgresSinkConfig {
     pub url: String,
     pub table: String,
-    #[serde(default = "default_max_connections")]
-    pub max_connections: usize,
+    pub max_connections: i32,
+    pub source_schema: Option<String>,
 }
 
 fn default_batch_size() -> usize {

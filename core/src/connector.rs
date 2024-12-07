@@ -15,10 +15,14 @@ pub struct DataBatch {
 
 #[async_trait]
 pub trait Source: Send + Sync {
+    fn clone_box(&self) -> Box<dyn Source>;
     async fn init(&mut self) -> Result<()>;
     async fn read_batch(&mut self, batch_size: usize) -> Result<Option<DataBatch>>;
     async fn close(&mut self) -> Result<()>;
     async fn get_schema(&self) -> Result<String>;
+    async fn get_total_records(&self) -> Result<i64>;
+    async fn get_id_range(&self) -> Result<(i64, i64)>;
+    async fn read_batch_range(&mut self, start_id: i64, end_id: i64) -> Result<Option<DataBatch>>;
 }
 
 #[async_trait]
