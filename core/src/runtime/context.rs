@@ -1,4 +1,4 @@
-use dbsync_core::metrics::Metrics;
+use crate::metrics::Metrics;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 

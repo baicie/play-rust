@@ -1,4 +1,4 @@
-use dbsync_core::Result;
+use crate::error::Result;
 use std::path::Path;
 
 pub struct PluginLoader {

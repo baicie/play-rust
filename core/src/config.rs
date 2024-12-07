@@ -1,4 +1,4 @@
-use dbsync_core::connector::ConnectorConfig;
+use crate::connector::ConnectorConfig;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]

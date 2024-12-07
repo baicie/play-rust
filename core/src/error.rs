@@ -23,3 +23,5 @@ pub enum Error {
     #[error("Task error: {0}")]
     Task(#[from] tokio::task::JoinError),
 }
+
+pub type Result<T> = std::result::Result<T, Error>;

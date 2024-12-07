@@ -2,8 +2,7 @@ use async_trait::async_trait;
 use dbsync_core::connector::DataBatch;
 use dbsync_core::{
     connector::{Record, Transform},
-    error::Error,
-    Result,
+    error::{Error, Result},
 };
 use lazy_static::lazy_static;
 use std::collections::HashMap;

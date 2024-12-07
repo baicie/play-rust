@@ -1,7 +1,7 @@
 use crate::{
     connector::{DataBatch, Sink, Source, Transform},
+    error::Result,
     metrics::Metrics,
-    Result,
 };
 use std::mem;
 use tokio::sync::mpsc;

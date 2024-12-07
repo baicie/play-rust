@@ -50,7 +50,7 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-          components: rustfmt
+          components: rustfmt, clippy
 
       - name: Cache dependencies
         uses: actions/cache@v3
@@ -69,6 +69,9 @@ jobs:
         env:
           TEST_MYSQL_URL: mysql://root:password@localhost:3306/test
           TEST_POSTGRES_URL: postgres://postgres:password@localhost:5432/test
+
+      - name: Clippy
+        run: cargo clippy -- -D warnings
 
   build:
     name: Build

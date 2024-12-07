@@ -2,7 +2,7 @@ use crate::config::MySQLSourceConfig;
 use async_trait::async_trait;
 use dbsync_core::{
     connector::{ConnectorConfig, DataBatch, Record, Source},
-    Error, Result,
+    error::{Error, Result},
 };
 use sqlx::{mysql::MySqlPool, Column, Row, TypeInfo};
 use std::collections::HashMap;

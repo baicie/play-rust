@@ -1,4 +1,4 @@
-use crate::Result;
+use crate::error::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

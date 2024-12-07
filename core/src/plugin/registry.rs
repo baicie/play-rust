@@ -1,4 +1,7 @@
-use dbsync_core::{connector::ConnectorConfig, Result, Sink, Source};
+use crate::{
+    connector::{ConnectorConfig, Sink, Source},
+    error::Result,
+};
 use std::collections::HashMap;
 
 type SourceFactory = Box<dyn Fn(ConnectorConfig) -> Result<Box<dyn Source>> + Send + Sync>;

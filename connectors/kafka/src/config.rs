@@ -1,4 +1,4 @@
-use dbsync_core::{Error, Result};
+use dbsync_core::error::{Error, Result};
 use jsonschema::Validator;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

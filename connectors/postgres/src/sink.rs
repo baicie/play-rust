@@ -2,7 +2,7 @@ use crate::config::PostgresSinkConfig;
 use async_trait::async_trait;
 use dbsync_core::{
     connector::{ConnectorConfig, DataBatch, Sink},
-    Error, Result,
+    error::{Error, Result},
 };
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use tracing::info;

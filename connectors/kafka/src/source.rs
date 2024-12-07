@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use dbsync_core::{
     connector::{ConnectorConfig, DataBatch, Record, Source},
-    Error, Result,
+    error::{Error, Result},
 };
 use rdkafka::{
     consumer::{Consumer, StreamConsumer},
@@ -46,7 +46,7 @@ impl KafkaSource {
                 .ok_or_else(|| Error::Config("Kafka group.id not provided".into()))?,
         );
 
-        // 设置其他可选配置
+        // 设置其��可选配置
         if let Some(auto_offset_reset) = self.config.properties.get("auto.offset.reset") {
             config.set(
                 "auto.offset.reset",

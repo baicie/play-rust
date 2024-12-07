@@ -4,8 +4,10 @@ mod registry;
 pub use loader::PluginLoader;
 pub use registry::PluginRegistry;
 
-use dbsync_core::{connector::ConnectorConfig, Error, Result, Sink, Source, Transform};
-use std::collections::HashMap;
+use crate::{
+    connector::{ConnectorConfig, Sink, Source},
+    error::{Error, Result},
+};
 
 pub struct PluginManager {
     registry: PluginRegistry,

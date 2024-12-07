@@ -2,7 +2,7 @@ use crate::config::PostgresSourceConfig;
 use async_trait::async_trait;
 use dbsync_core::{
     connector::{ConnectorConfig, DataBatch, Record, Source},
-    Error, Result,
+    error::{Error, Result},
 };
 use sqlx::{postgres::PgPool, Column, Row, TypeInfo};
 use std::collections::HashMap;

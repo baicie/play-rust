@@ -2,7 +2,7 @@ use crate::config::MySQLSinkConfig;
 use async_trait::async_trait;
 use dbsync_core::{
     connector::{ConnectorConfig, DataBatch, Sink},
-    Error, Result,
+    error::{Error, Result},
 };
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 use tracing::info;

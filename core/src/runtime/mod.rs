@@ -1,7 +1,7 @@
 pub mod context;
 
+use crate::error::Result;
 use context::RuntimeContext;
-use dbsync_core::Result;
 
 pub struct Runtime {
     context: RuntimeContext,
