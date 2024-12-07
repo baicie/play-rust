@@ -46,7 +46,7 @@ impl KafkaSource {
                 .ok_or_else(|| Error::Config("Kafka group.id not provided".into()))?,
         );
 
-        // 设置其��可选配置
+        // 设置其他可选配置
         if let Some(auto_offset_reset) = self.config.properties.get("auto.offset.reset") {
             config.set(
                 "auto.offset.reset",
@@ -135,5 +135,10 @@ impl Source for KafkaSource {
             consumer.unsubscribe();
         }
         Ok(())
+    }
+
+    async fn get_schema(&self) -> Result<String> {
+        // Kafka 没有固定的表结构，返回一个通用的 JSON 结构
+        Ok("CREATE TABLE source_table (data JSONB NOT NULL)".to_string())
     }
 }

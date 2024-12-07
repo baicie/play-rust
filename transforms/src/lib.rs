@@ -9,13 +9,13 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 lazy_static! {
-    static ref TRANSFORM_FACTORIES: Mutex<HashMap<String, Box<dyn Fn(Record) -> Result<Box<dyn Transform>> + Send + Sync>>> =
+    static ref TRANSFORM_FACTORIES: Mutex<HashMap<String, Box<dyn Fn(Record) -> Result<FieldRenameTransform> + Send + Sync>>> =
         Mutex::new(HashMap::new());
 }
 
 fn register_transform<F>(name: &str, factory: F)
 where
-    F: Fn(Record) -> Result<Box<dyn Transform>> + Send + Sync + 'static,
+    F: Fn(Record) -> Result<FieldRenameTransform> + Send + Sync + 'static,
 {
     TRANSFORM_FACTORIES
         .lock()
@@ -25,7 +25,7 @@ where
 
 pub fn get_transform_factory(
     transform_type: &str,
-) -> Option<Box<dyn Fn(Record) -> Result<Box<dyn Transform>>>> {
+) -> Option<Box<dyn Fn(Record) -> Result<FieldRenameTransform>>> {
     // TODO: 实现转换器工厂
     None
 }
@@ -34,7 +34,7 @@ pub fn register_transforms() {
     register_transform("field_rename", create_field_rename_transform);
 }
 
-fn create_field_rename_transform(record: Record) -> Result<Box<dyn Transform>> {
+fn create_field_rename_transform(record: Record) -> Result<FieldRenameTransform> {
     let mappings = record
         .fields
         .get("mappings")
@@ -48,10 +48,11 @@ fn create_field_rename_transform(record: Record) -> Result<Box<dyn Transform>> {
         })
         .collect::<Result<HashMap<_, _>>>()?;
 
-    Ok(Box::new(FieldRenameTransform { mappings }))
+    Ok(FieldRenameTransform { mappings })
 }
 
-struct FieldRenameTransform {
+#[derive(Clone)]
+pub struct FieldRenameTransform {
     mappings: HashMap<String, String>,
 }
 

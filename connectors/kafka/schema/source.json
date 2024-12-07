@@ -19,7 +19,7 @@
     "batch_size": {
       "type": "integer",
       "minimum": 1,
-      "default": 1000,
+      "default": 10000,
       "description": "Number of records to read in one batch"
     }
   }

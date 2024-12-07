@@ -48,13 +48,15 @@ impl Source for MySQLSource {
             .as_ref()
             .ok_or_else(|| Error::Connection("Not connected".into()))?;
 
-        let actual_batch_size = batch_size.min(self.config.batch_size);
+        let actual_batch_size = batch_size.min(1000);
 
-        let query = format!("SELECT * FROM {} LIMIT ? OFFSET ?", self.config.table);
+        let offset = self.current_offset;
+        let query = format!(
+            "SELECT * FROM {} LIMIT {} OFFSET {}",
+            self.config.table, actual_batch_size, offset
+        );
 
         let rows = sqlx::query(&query)
-            .bind(actual_batch_size as i64)
-            .bind(self.current_offset)
             .fetch_all(pool)
             .await
             .map_err(|e| Error::Read(e.to_string()))?;
@@ -63,13 +65,14 @@ impl Source for MySQLSource {
             return Ok(None);
         }
 
-        let len = rows.len();
+        self.current_offset += rows.len() as i64;
+
         let records = rows
             .into_iter()
             .map(|row| {
                 let mut fields = HashMap::new();
-                // 获取列名
                 let columns = row.columns();
+
                 for col in columns {
                     let name = col.name().to_string();
                     let value = match col.type_info().name() {
@@ -97,11 +100,11 @@ impl Source for MySQLSource {
                     };
                     fields.insert(name, value);
                 }
+
                 Record { fields }
             })
             .collect();
 
-        self.current_offset += len as i64;
         Ok(Some(DataBatch { records }))
     }
 
@@ -111,6 +114,24 @@ impl Source for MySQLSource {
             pool.close().await;
         }
         Ok(())
+    }
+
+    async fn get_schema(&self) -> Result<String> {
+        let pool = MySqlPool::connect(&self.config.url)
+            .await
+            .map_err(|e| Error::Connection(e.to_string()))?;
+
+        let rows = sqlx::query(&format!("SHOW CREATE TABLE `{}`", self.config.table))
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| Error::Read(e.to_string()))?;
+
+        if let Some(row) = rows.get(0) {
+            let create_table: String = row.get(1);
+            Ok(create_table.replace(&self.config.table, "source_table"))
+        } else {
+            Err(Error::Read("Failed to get table schema".into()))
+        }
     }
 }
 

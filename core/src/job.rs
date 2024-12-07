@@ -3,8 +3,9 @@ use crate::{
     error::Result,
     metrics::Metrics,
 };
+use futures::StreamExt;
 use std::mem;
-use tokio::sync::mpsc;
+use tokio::sync::broadcast;
 use tracing::info;
 
 pub struct JobConfig {
@@ -15,26 +16,22 @@ pub struct JobConfig {
 impl Default for JobConfig {
     fn default() -> Self {
         Self {
-            batch_size: 1000,
+            batch_size: 10000,
             channel_size: 10,
         }
     }
 }
 
-pub struct SyncJob {
+pub struct SyncJob<T: Transform + 'static> {
     source: Box<dyn Source>,
-    transforms: Vec<Box<dyn Transform>>,
+    transforms: Vec<T>,
     sink: Box<dyn Sink>,
     config: JobConfig,
     metrics: Metrics,
 }
 
-impl SyncJob {
-    pub fn new(
-        source: Box<dyn Source>,
-        transforms: Vec<Box<dyn Transform>>,
-        sink: Box<dyn Sink>,
-    ) -> Self {
+impl<T: Transform + 'static> SyncJob<T> {
+    pub fn new(source: Box<dyn Source>, transforms: Vec<T>, sink: Box<dyn Sink>) -> Self {
         Self {
             source,
             transforms,
@@ -42,6 +39,11 @@ impl SyncJob {
             config: JobConfig::default(),
             metrics: Metrics::new(),
         }
+    }
+
+    pub fn with_config(mut self, config: JobConfig) -> Self {
+        self.config = config;
+        self
     }
 
     pub async fn run(&mut self) -> Result<()> {
@@ -52,20 +54,44 @@ impl SyncJob {
         self.source.init().await?;
         self.sink.init().await?;
 
-        // 创建通道
-        let (tx, mut rx) = mpsc::channel(self.config.channel_size);
+        // 创建个写入通道
+        let (tx, _rx) = broadcast::channel(self.config.channel_size);
+        let sink_pool_size = 5; // 写入并发数
 
-        // 启动读取任务
+        // 创建多个 sink 实例
+        let sink_pool = (0..sink_pool_size)
+            .map(|_| {
+                let mut sink = self.sink.clone_box();
+                let metrics = self.metrics.clone();
+                let mut rx = tx.subscribe();
+
+                tokio::spawn(async move {
+                    while let Ok(batch) = rx.recv().await {
+                        sink.write_batch(batch).await?;
+                        metrics.record_write_batch().await;
+                    }
+                    Ok::<_, crate::Error>(())
+                })
+            })
+            .collect::<Vec<_>>();
+
+        // 并行读取和转换
         let read_handle = {
-            // 使用 replace 替换 source，放入一个空盒子
             let mut source = mem::replace(&mut self.source, Box::new(EmptySource));
             let metrics = self.metrics.clone();
             let batch_size = self.config.batch_size;
+            let mut transforms = self.transforms.clone();
 
             tokio::spawn(async move {
-                while let Some(batch) = source.read_batch(batch_size).await? {
+                while let Some(mut batch) = source.read_batch(batch_size).await? {
                     metrics.record_read_batch(&batch).await;
-                    if tx.send(batch).await.is_err() {
+
+                    for transform in transforms.iter_mut() {
+                        batch = transform.transform(batch).await?;
+                        metrics.record_transform_batch(&batch).await;
+                    }
+
+                    if tx.send(batch).is_err() {
                         break;
                     }
                 }
@@ -73,21 +99,11 @@ impl SyncJob {
             })
         };
 
-        // 处理数据
-        while let Some(mut batch) = rx.recv().await {
-            // 应用转换
-            for transform in &mut self.transforms {
-                batch = transform.transform(batch).await?;
-                self.metrics.record_transform_batch(&batch).await;
-            }
-
-            // 写入数据
-            self.sink.write_batch(batch).await?;
-            self.metrics.record_write_batch().await;
-        }
-
-        // 等待读取任务完成
+        // 等待所有任务完成
         read_handle.await??;
+        for handle in sink_pool {
+            handle.await??;
+        }
 
         // 提交并关闭
         self.sink.commit().await?;
@@ -117,5 +133,9 @@ impl Source for EmptySource {
 
     async fn close(&mut self) -> Result<()> {
         Ok(())
+    }
+
+    async fn get_schema(&self) -> Result<String> {
+        Ok("CREATE TABLE empty ()".to_string())
     }
 }

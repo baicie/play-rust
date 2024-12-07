@@ -10,6 +10,7 @@ use rdkafka::{
 use std::time::Duration;
 use tracing::info;
 
+#[derive(Clone)]
 pub struct KafkaSink {
     config: ConnectorConfig,
     producer: Option<FutureProducer>,
@@ -103,5 +104,9 @@ impl Sink for KafkaSink {
                 .map_err(|e| Error::Write(format!("Failed to flush producer: {}", e)))?;
         }
         Ok(())
+    }
+
+    fn clone_box(&self) -> Box<dyn Sink> {
+        Box::new(self.clone())
     }
 }

@@ -18,10 +18,12 @@ pub trait Source: Send + Sync {
     async fn init(&mut self) -> Result<()>;
     async fn read_batch(&mut self, batch_size: usize) -> Result<Option<DataBatch>>;
     async fn close(&mut self) -> Result<()>;
+    async fn get_schema(&self) -> Result<String>;
 }
 
 #[async_trait]
 pub trait Sink: Send + Sync {
+    fn clone_box(&self) -> Box<dyn Sink>;
     async fn init(&mut self) -> Result<()>;
     async fn write_batch(&mut self, batch: DataBatch) -> Result<()>;
     async fn commit(&mut self) -> Result<()>;
@@ -29,7 +31,7 @@ pub trait Sink: Send + Sync {
 }
 
 #[async_trait]
-pub trait Transform: Send + Sync {
+pub trait Transform: Send + Sync + Clone {
     async fn transform(&mut self, batch: DataBatch) -> Result<DataBatch>;
 }
 

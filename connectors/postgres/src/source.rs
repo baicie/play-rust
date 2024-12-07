@@ -111,6 +111,27 @@ impl Source for PostgresSource {
         }
         Ok(())
     }
+
+    async fn get_schema(&self) -> Result<String> {
+        let pool = PgPool::connect(&self.config.url)
+            .await
+            .map_err(|e| Error::Connection(e.to_string()))?;
+
+        let rows = sqlx::query(
+            "SELECT table_definition FROM information_schema.tables WHERE table_name = $1",
+        )
+        .bind(&self.config.table)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| Error::Read(e.to_string()))?;
+
+        if let Some(row) = rows.get(0) {
+            let create_table: String = row.get("table_definition");
+            Ok(create_table.replace(&self.config.table, "source_table"))
+        } else {
+            Err(Error::Read("Failed to get table schema".into()))
+        }
+    }
 }
 
 #[cfg(test)]

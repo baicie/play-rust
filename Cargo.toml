@@ -23,6 +23,7 @@ tracing-subscriber = "0.3"
 async-trait = "0.1.83"
 lazy_static = "1.4"
 jsonschema = "0.26.1"
+futures = "0.3"
 
 [package]
 name = "dbsync"

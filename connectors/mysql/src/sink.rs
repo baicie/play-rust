@@ -7,6 +7,7 @@ use dbsync_core::{
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 use tracing::info;
 
+#[derive(Clone)]
 pub struct MySQLSink {
     config: MySQLSinkConfig,
     pool: Option<MySqlPool>,
@@ -23,6 +24,10 @@ impl MySQLSink {
 
 #[async_trait]
 impl Sink for MySQLSink {
+    fn clone_box(&self) -> Box<dyn Sink> {
+        Box::new(self.clone())
+    }
+
     async fn init(&mut self) -> Result<()> {
         let url = &self.config.url;
         info!("Connecting to MySQL database: {}", url);
