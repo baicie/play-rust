@@ -13,7 +13,7 @@ pub struct JobConfig {
 impl Default for JobConfig {
     fn default() -> Self {
         Self {
-            batch_size: 1000,
+            batch_size: 2000,
             channel_size: 10,
         }
     }
@@ -90,7 +90,6 @@ impl<T: Transform> SyncJob<T> {
 
         // 读取完成后打印详细信息
         info!("Total batches: {}", batches.len());
-
         info!(
             "Total records read: {}",
             batches.iter().map(|b| b.records.len()).sum::<usize>()

@@ -75,7 +75,6 @@ impl Sink for MySQLSink {
             .map_err(|e| Error::Write(e.to_string()))?;
 
         for record in batch.records {
-            println!("record: {:?}", record);
             let (columns, values): (Vec<_>, Vec<_>) = record.fields.into_iter().unzip();
             let placeholders = (0..values.len())
                 .map(|_| "?")
@@ -127,7 +126,7 @@ impl Sink for MySQLSink {
 #[async_trait]
 impl ShardedSink for MySQLSink {
     async fn get_worker_count(&self) -> Result<usize> {
-        Ok(self.config.max_connections as usize / 2) // 预留一半连接用于其他操作
+        Ok(self.config.max_connections as usize / 2)
     }
 
     async fn get_shard_size(&self) -> Result<usize> {

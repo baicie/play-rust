@@ -192,7 +192,7 @@ impl ShardedSource for MySQLSource {
 
         let column_types = self.get_column_types(pool).await?;
         let query = format!(
-            "SELECT * FROM {} WHERE id >= {} AND id < {} LIMIT 1000",
+            "SELECT * FROM {} WHERE id >= {} AND id <= {} LIMIT 1000",
             self.config.table, start_id, end_id
         );
 

@@ -133,10 +133,7 @@ impl TypeConverter for MySQLValueConverter {
             (
                 DbsyncValue::Integer(i),
                 DbsyncType::TinyInt | DbsyncType::SmallInt | DbsyncType::Int | DbsyncType::BigInt,
-            ) => {
-                println!("i: {:?}", i);
-                Ok(i.to_string())
-            }
+            ) => Ok(i.to_string()),
 
             // 浮点类型
             (DbsyncValue::Float(f), DbsyncType::Float | DbsyncType::Double) => Ok(f.to_string()),
@@ -150,13 +147,13 @@ impl TypeConverter for MySQLValueConverter {
             (
                 DbsyncValue::String(s),
                 DbsyncType::Char(_) | DbsyncType::VarChar(_) | DbsyncType::Text,
-            ) => Ok(format!("'{}'", s)),
+            ) => Ok(format!("{}", s)),
 
             (DbsyncValue::DateTime(ts), DbsyncType::DateTime) => {
                 // 将 Unix 时间戳转换为 MySQL 格式的日期时间字符串
                 let dt = chrono::NaiveDateTime::from_timestamp_opt(*ts, 0)
                     .ok_or_else(|| Error::Type("Invalid timestamp".to_string()))?;
-                Ok(format!("'{}'", dt.format("%Y-%m-%d %H:%M:%S")))
+                Ok(format!("{}", dt.format("%Y-%m-%d %H:%M:%S")))
             }
 
             (
@@ -165,7 +162,7 @@ impl TypeConverter for MySQLValueConverter {
             ) => {
                 let dt = chrono::NaiveDateTime::from_timestamp_opt(*ts, 0)
                     .ok_or_else(|| Error::Type("Invalid timestamp".to_string()))?;
-                Ok(format!("'{}'", dt.format("%Y-%m-%d %H:%M:%S")))
+                Ok(format!("{}", dt.format("%Y-%m-%d %H:%M:%S")))
             }
 
             // 布尔类型
