@@ -90,14 +90,7 @@ impl<T: Transform> SyncJob<T> {
 
         // 读取完成后打印详细信息
         info!("Total batches: {}", batches.len());
-        for (i, batch) in batches.iter().enumerate() {
-            info!(
-                "Batch {}: {} records, first record: {:?}",
-                i,
-                batch.records.len(),
-                batch.records.first()
-            );
-        }
+
         info!(
             "Total records read: {}",
             batches.iter().map(|b| b.records.len()).sum::<usize>()

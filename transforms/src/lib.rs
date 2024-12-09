@@ -37,16 +37,9 @@ pub fn register_transforms() {
 fn create_field_rename_transform(record: Record) -> Result<FieldRenameTransform> {
     let mappings = record
         .fields
-        .get("mappings")
-        .and_then(|v| v.as_object())
-        .ok_or_else(|| Error::Config("field_rename transform requires mappings".to_string()))?
-        .iter()
-        .map(|(k, v)| {
-            v.as_str()
-                .map(|s| (k.clone(), s.to_string()))
-                .ok_or_else(|| Error::Config("mapping values must be strings".to_string()))
-        })
-        .collect::<Result<HashMap<_, _>>>()?;
+        .into_iter()
+        .map(|(name, _)| (name.clone(), name))
+        .collect::<HashMap<String, String>>();
 
     Ok(FieldRenameTransform { mappings })
 }

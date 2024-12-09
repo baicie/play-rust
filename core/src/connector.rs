@@ -1,4 +1,5 @@
 use crate::error::Result;
+use crate::{DbsyncType, DbsyncValue};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -19,7 +20,7 @@ pub struct DataBatch {
 
 #[derive(Clone, Debug)]
 pub struct Record {
-    pub fields: HashMap<String, Value>,
+    pub fields: HashMap<String, (DbsyncValue, DbsyncType)>,
 }
 
 // 基础 Source trait

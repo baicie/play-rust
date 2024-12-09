@@ -10,7 +10,7 @@ use dbsync_core::{
 use sqlx::{mysql::MySqlPool, Column, Row};
 use std::any::Any;
 use std::collections::HashMap;
-use tracing::{error, info};
+use tracing::info;
 
 #[derive(Clone)]
 pub struct MySQLSource {
@@ -32,10 +32,7 @@ impl MySQLSource {
         })
     }
 
-    async fn get_column_types(
-        &self,
-        pool: &MySqlPool,
-    ) -> Result<HashMap<String, (String, DbsyncType)>> {
+    async fn get_column_types(&self, pool: &MySqlPool) -> Result<HashMap<String, DbsyncType>> {
         let query = r#"
             SELECT 
                 COLUMN_NAME,
@@ -57,7 +54,7 @@ impl MySQLSource {
             let column_name: String = row.get("COLUMN_NAME");
             let column_type: String = row.get("COLUMN_TYPE");
             let dbsync_type = self.type_mapper.to_dbsync_type(&column_type)?;
-            column_types.insert(column_name, (column_type, dbsync_type));
+            column_types.insert(column_name, dbsync_type);
         }
 
         Ok(column_types)
@@ -118,29 +115,14 @@ impl Source for MySQLSource {
                 let mut fields = HashMap::new();
                 for col in row.columns() {
                     let name = col.name().to_string();
-                    let (type_name, _) = column_types
+                    let field_type = column_types
                         .get(&name)
                         .ok_or_else(|| Error::Type(format!("Unknown column: {}", name)))?;
 
-                    let raw_value = match type_name.as_str() {
-                        "INT" | "BIGINT" => row
-                            .try_get::<i64, _>(col.ordinal())
-                            .map(|v| v.to_string())
-                            .unwrap_or_else(|_| "NULL".to_string()),
-                        "FLOAT" | "DOUBLE" | "DECIMAL" => row
-                            .try_get::<f64, _>(col.ordinal())
-                            .map(|v| v.to_string())
-                            .unwrap_or_else(|_| "NULL".to_string()),
-                        _ => row
-                            .try_get::<Option<String>, _>(col.ordinal())
-                            .unwrap()
-                            .unwrap_or_else(|| "NULL".to_string()),
-                    };
-
-                    let dbsync_value = self
-                        .value_converter
-                        .to_dbsync_value(&raw_value, type_name)?;
-                    fields.insert(name, serde_json::to_value(&dbsync_value)?);
+                    let dbsync_value =
+                        self.value_converter
+                            .to_dbsync_value(col, &row, &field_type)?;
+                    fields.insert(name, (dbsync_value, field_type.clone()));
                 }
                 Ok(Record { fields })
             })
@@ -229,21 +211,15 @@ impl ShardedSource for MySQLSource {
                 let mut fields = HashMap::new();
                 for col in row.columns() {
                     let name = col.name().to_string();
-                    let (type_name, _) = column_types
+                    let field_type = column_types
                         .get(&name)
                         .ok_or_else(|| Error::Type(format!("Unknown column: {}", name)))?;
 
-                    let raw_value = row
-                        .try_get::<Option<String>, _>(col.ordinal())
-                        .unwrap()
-                        .unwrap_or_else(|| "NULL".to_string());
-
-                    let dbsync_value = self
-                        .value_converter
-                        .to_dbsync_value(&raw_value, type_name)?;
-                    fields.insert(name, serde_json::to_value(&dbsync_value)?);
+                    let dbsync_value =
+                        self.value_converter
+                            .to_dbsync_value(col, &row, &field_type)?;
+                    fields.insert(name, (dbsync_value, field_type.clone()));
                 }
-                println!("fields: {:?}", fields);
                 Ok(Record { fields })
             })
             .collect::<Result<Vec<_>>>()?;

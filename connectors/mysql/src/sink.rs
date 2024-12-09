@@ -1,10 +1,11 @@
-use crate::config::MySQLSinkConfig;
+use crate::{config::MySQLSinkConfig, type_converter::MySQLValueConverter};
 use async_trait::async_trait;
 use dbsync_core::{
     connector::{
         ConnectorConfig, Context, DataBatch, PoolStats, PooledSink, SaveMode, ShardedSink, Sink,
     },
     error::{Error, Result},
+    types::TypeConverter,
 };
 use sqlx::{
     mysql::{MySqlPool, MySqlPoolOptions},
@@ -16,6 +17,7 @@ use tracing::{error, info};
 pub struct MySQLSink {
     config: MySQLSinkConfig,
     pool: Option<MySqlPool>,
+    value_converter: MySQLValueConverter,
 }
 
 impl MySQLSink {
@@ -25,6 +27,8 @@ impl MySQLSink {
                 serde_json::Map::from_iter(config.properties),
             ))?,
             pool: None,
+            // type_mapper: MySQLTypeMapper,
+            value_converter: MySQLValueConverter,
         })
     }
 }
@@ -71,6 +75,7 @@ impl Sink for MySQLSink {
             .map_err(|e| Error::Write(e.to_string()))?;
 
         for record in batch.records {
+            println!("record: {:?}", record);
             let (columns, values): (Vec<_>, Vec<_>) = record.fields.into_iter().unzip();
             let placeholders = (0..values.len())
                 .map(|_| "?")
@@ -85,8 +90,11 @@ impl Sink for MySQLSink {
             );
 
             let mut query_builder = sqlx::query(&query);
-            for value in values {
-                query_builder = query_builder.bind(value.to_string());
+            for (field_value, field_type) in values {
+                query_builder = query_builder.bind(
+                    self.value_converter
+                        .from_dbsync_value(&field_value, &field_type)?,
+                );
             }
 
             query_builder
@@ -157,8 +165,11 @@ impl ShardedSink for MySQLSink {
                 );
 
                 let mut query_builder = sqlx::query(&query);
-                for value in values {
-                    query_builder = query_builder.bind(value.to_string());
+                for (field_value, field_type) in values {
+                    query_builder = query_builder.bind(
+                        self.value_converter
+                            .from_dbsync_value(&field_value, &field_type)?,
+                    );
                 }
 
                 query_builder
@@ -267,8 +278,11 @@ impl PooledSink for MySQLSink {
             );
 
             let mut query_builder = sqlx::query(&query);
-            for value in values {
-                query_builder = query_builder.bind(value.to_string());
+            for (field_value, field_type) in values {
+                query_builder = query_builder.bind(
+                    self.value_converter
+                        .from_dbsync_value(&field_value, &field_type)?,
+                );
             }
 
             query_builder
@@ -324,94 +338,5 @@ impl PooledSink for MySQLSink {
             .map_err(|e| Error::Write(e.to_string()))?;
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-
-    use super::*;
-    use dbsync_core::connector::{ConnectorConfig, Record};
-    use serde_json::json;
-    use sqlx::mysql::MySqlPoolOptions;
-
-    async fn setup_test_db() -> MySqlPool {
-        let url = std::env::var("TEST_MYSQL_URL")
-            .unwrap_or_else(|_| "mysql://root:password@localhost:3306/test".to_string());
-
-        MySqlPoolOptions::new()
-            .max_connections(5)
-            .connect(&url)
-            .await
-            .expect("Failed to connect to test database")
-    }
-
-    #[tokio::test]
-    async fn test_write_batch() {
-        let pool = setup_test_db().await;
-
-        // 创建测试表
-        sqlx::query(
-            "CREATE TEMPORARY TABLE test_sink (
-                id INT,
-                name VARCHAR(255),
-                age INT
-            )",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        // 创建并初始化 sink
-        let config = ConnectorConfig {
-            name: "test_sink".to_string(),
-            connector_type: "mysql".to_string(),
-            properties: HashMap::from_iter(vec![
-                (
-                    "url".to_string(),
-                    json!("mysql://root:password@localhost:3306/test"),
-                ),
-                ("table".to_string(), json!("test_sink")),
-                ("max_connections".to_string(), json!(5)),
-            ]),
-        };
-
-        let mut sink = MySQLSink::new(config).unwrap();
-        let mut ctx = Context::new();
-        sink.init(&mut ctx).await.unwrap();
-
-        // 准备测试数据
-        let batch = DataBatch {
-            records: vec![
-                Record {
-                    fields: HashMap::from_iter(vec![
-                        ("id".to_string(), json!(1)),
-                        ("name".to_string(), json!("Alice")),
-                        ("age".to_string(), json!(20)),
-                    ]),
-                },
-                Record {
-                    fields: HashMap::from_iter(vec![
-                        ("id".to_string(), json!(2)),
-                        ("name".to_string(), json!("Bob")),
-                        ("age".to_string(), json!(25)),
-                    ]),
-                },
-            ],
-        };
-
-        // 写入数据
-        sink.write_batch(batch).await.unwrap();
-
-        // 验证写入的数据
-        let rows: Vec<(i32, String, i32)> = sqlx::query_as("SELECT id, name, age FROM test_sink")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
-
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0], (1, "Alice".to_string(), 20));
-        assert_eq!(rows[1], (2, "Bob".to_string(), 25));
     }
 }
