@@ -13,6 +13,8 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 jsonschema = { workspace = true }
 lazy_static = { workspace = true } 
+chrono = { version = "0.4", features = ["serde"] }
+hex = "0.4" 
 
 [dev-dependencies]
 tokio = { workspace = true }

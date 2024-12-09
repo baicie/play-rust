@@ -1,10 +1,11 @@
 use crate::{
-    connector::{ConnectorConfig, Sink, Source},
+    connector::{ConnectorConfig, ShardedSourceExt, Sink},
     error::Result,
 };
 use std::collections::HashMap;
 
-type SourceFactory = Box<dyn Fn(ConnectorConfig) -> Result<Box<dyn Source>> + Send + Sync>;
+type SourceFactory =
+    Box<dyn Fn(ConnectorConfig) -> Result<Box<dyn ShardedSourceExt>> + Send + Sync>;
 type SinkFactory = Box<dyn Fn(ConnectorConfig) -> Result<Box<dyn Sink>> + Send + Sync>;
 
 pub struct PluginRegistry {

@@ -25,6 +25,18 @@ pub enum Error {
 
     #[error("Type conversion error: {0}")]
     Type(String),
+
+    #[error("Other error: {0}")]
+    Other(String),
+
+    #[error("Channel error: {0}")]
+    Channel(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl From<serde_json::Error> for Error {
+    fn from(err: serde_json::Error) -> Self {
+        Error::Type(err.to_string())
+    }
+}

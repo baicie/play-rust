@@ -5,7 +5,7 @@ pub use loader::PluginLoader;
 pub use registry::PluginRegistry;
 
 use crate::{
-    connector::{ConnectorConfig, Sink, Source},
+    connector::{ConnectorConfig, ShardedSourceExt, Sink, Source},
     error::{Error, Result},
 };
 
@@ -24,7 +24,7 @@ impl PluginManager {
 
     pub fn register_source<F>(&mut self, name: &str, factory: F)
     where
-        F: Fn(ConnectorConfig) -> Result<Box<dyn Source>> + Send + Sync + 'static,
+        F: Fn(ConnectorConfig) -> Result<Box<dyn ShardedSourceExt>> + Send + Sync + 'static,
     {
         self.registry.register_source(name, Box::new(factory));
     }
@@ -36,7 +36,7 @@ impl PluginManager {
         self.registry.register_sink(name, Box::new(factory));
     }
 
-    pub fn create_source(&self, config: ConnectorConfig) -> Result<Box<dyn Source>> {
+    pub fn create_source(&self, config: ConnectorConfig) -> Result<Box<dyn ShardedSourceExt>> {
         let factory = self
             .registry
             .get_source_factory(&config.connector_type)

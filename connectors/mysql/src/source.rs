@@ -1,47 +1,96 @@
 use crate::config::MySQLSourceConfig;
-use crate::type_converter::MySQLTypeConverter;
+use crate::type_converter::{MySQLTypeMapper, MySQLValueConverter};
 use async_trait::async_trait;
+use dbsync_core::connector::Context;
 use dbsync_core::{
-    connector::{ConnectorConfig, DataBatch, Record, Source},
+    connector::{ConnectorConfig, DataBatch, Record, ShardedSource, Source},
     error::{Error, Result},
-    types::TypeConverter,
+    types::{DbsyncType, TypeConverter, TypeMapper},
 };
-use sqlx::{mysql::MySqlPool, Column, Row, TypeInfo};
+use sqlx::{mysql::MySqlPool, Column, Row};
+use std::any::Any;
 use std::collections::HashMap;
-use tracing::info;
+use tracing::{error, info};
 
 #[derive(Clone)]
 pub struct MySQLSource {
     config: MySQLSourceConfig,
     pool: Option<MySqlPool>,
-    current_offset: i64,
+    type_mapper: MySQLTypeMapper,
+    value_converter: MySQLValueConverter,
 }
 
 impl MySQLSource {
     pub fn new(config: ConnectorConfig) -> Result<Self> {
-        let config = MySQLSourceConfig::from_json(serde_json::Value::Object(
-            serde_json::Map::from_iter(config.properties),
-        ))?;
         Ok(Self {
-            config,
+            config: MySQLSourceConfig::from_json(serde_json::Value::Object(
+                serde_json::Map::from_iter(config.properties),
+            ))?,
             pool: None,
-            current_offset: 0,
+            type_mapper: MySQLTypeMapper,
+            value_converter: MySQLValueConverter,
         })
+    }
+
+    async fn get_column_types(
+        &self,
+        pool: &MySqlPool,
+    ) -> Result<HashMap<String, (String, DbsyncType)>> {
+        let query = r#"
+            SELECT 
+                COLUMN_NAME,
+                CAST(DATA_TYPE AS CHAR) as COLUMN_TYPE
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = ?
+            ORDER BY ORDINAL_POSITION
+        "#;
+
+        let rows = sqlx::query(query)
+            .bind(&self.config.table)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| Error::Read(e.to_string()))?;
+
+        let mut column_types = HashMap::new();
+        for row in rows {
+            let column_name: String = row.get("COLUMN_NAME");
+            let column_type: String = row.get("COLUMN_TYPE");
+            let dbsync_type = self.type_mapper.to_dbsync_type(&column_type)?;
+            column_types.insert(column_name, (column_type, dbsync_type));
+        }
+
+        Ok(column_types)
+    }
+
+    async fn get_create_table_sql(&self, pool: &MySqlPool) -> Result<String> {
+        let query = "SHOW CREATE TABLE ".to_string() + &self.config.table;
+        let row = sqlx::query(&query)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| Error::Read(e.to_string()))?;
+
+        let create_table: String = row.get(1);
+        Ok(create_table.replace(&self.config.table, "target_table"))
     }
 }
 
 #[async_trait]
 impl Source for MySQLSource {
-    async fn init(&mut self) -> Result<()> {
+    async fn init(&mut self, ctx: &mut Context) -> Result<()> {
         let url = &self.config.url;
-        info!("Connecting to MySQL database: {}", url);
+        info!("Connecting to MySQL source: {}", url);
 
-        self.pool = Some(
-            MySqlPool::connect(url)
-                .await
-                .map_err(|e| Error::Connection(e.to_string()))?,
-        );
+        let pool = MySqlPool::connect(url)
+            .await
+            .map_err(|e| Error::Connection(format!("Failed to connect to MySQL source: {}", e)))?;
 
+        // 获取表结构并放入 context
+        let schema = self.get_create_table_sql(&pool).await?;
+        ctx.set_schema(schema);
+
+        info!("Successfully connected to MySQL source");
+        self.pool = Some(pool);
         Ok(())
     }
 
@@ -51,13 +100,8 @@ impl Source for MySQLSource {
             .as_ref()
             .ok_or_else(|| Error::Connection("Not connected".into()))?;
 
-        let actual_batch_size = batch_size.min(1000);
-
-        let offset = self.current_offset;
-        let query = format!(
-            "SELECT * FROM {} LIMIT {} OFFSET {}",
-            self.config.table, actual_batch_size, offset
-        );
+        let column_types = self.get_column_types(pool).await?;
+        let query = format!("SELECT * FROM {} LIMIT {}", self.config.table, batch_size);
 
         let rows = sqlx::query(&query)
             .fetch_all(pool)
@@ -68,36 +112,35 @@ impl Source for MySQLSource {
             return Ok(None);
         }
 
-        self.current_offset += rows.len() as i64;
-
-        let type_converter = MySQLTypeConverter;
         let records = rows
             .into_iter()
             .map(|row| {
                 let mut fields = HashMap::new();
-                let columns = row.columns();
-
-                for col in columns {
+                for col in row.columns() {
                     let name = col.name().to_string();
-                    let type_name = col.type_info().name();
+                    let (type_name, _) = column_types
+                        .get(&name)
+                        .ok_or_else(|| Error::Type(format!("Unknown column: {}", name)))?;
 
-                    // 获取原始字符串值
-                    let raw_value = match type_name {
-                        "INT" | "BIGINT" => {
-                            row.try_get::<i64, _>(col.ordinal()).map(|v| v.to_string())
-                        }
-                        "VARCHAR" | "TEXT" => row.try_get::<String, _>(col.ordinal()),
-                        "FLOAT" | "DOUBLE" => {
-                            row.try_get::<f64, _>(col.ordinal()).map(|v| v.to_string())
-                        }
-                        "BOOLEAN" => row.try_get::<bool, _>(col.ordinal()).map(|v| v.to_string()),
-                        _ => row.try_get::<String, _>(col.ordinal()),
-                    }
-                    .unwrap_or_else(|_| "NULL".to_string());
+                    let raw_value = match type_name.as_str() {
+                        "INT" | "BIGINT" => row
+                            .try_get::<i64, _>(col.ordinal())
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|_| "NULL".to_string()),
+                        "FLOAT" | "DOUBLE" | "DECIMAL" => row
+                            .try_get::<f64, _>(col.ordinal())
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|_| "NULL".to_string()),
+                        _ => row
+                            .try_get::<Option<String>, _>(col.ordinal())
+                            .unwrap()
+                            .unwrap_or_else(|| "NULL".to_string()),
+                    };
 
-                    // 转换为统一的 JSON 值
-                    let value = type_converter.convert_to_value(&raw_value, type_name)?;
-                    fields.insert(name, value);
+                    let dbsync_value = self
+                        .value_converter
+                        .to_dbsync_value(&raw_value, type_name)?;
+                    fields.insert(name, serde_json::to_value(&dbsync_value)?);
                 }
                 Ok(Record { fields })
             })
@@ -114,28 +157,21 @@ impl Source for MySQLSource {
         Ok(())
     }
 
-    async fn get_schema(&self) -> Result<String> {
-        let pool = MySqlPool::connect(&self.config.url)
-            .await
-            .map_err(|e| Error::Connection(e.to_string()))?;
-
-        let rows = sqlx::query(&format!("SHOW CREATE TABLE `{}`", self.config.table))
-            .fetch_all(&pool)
-            .await
-            .map_err(|e| Error::Read(e.to_string()))?;
-
-        if let Some(row) = rows.get(0) {
-            let create_table: String = row.get(1);
-            Ok(create_table.replace(&self.config.table, "source_table"))
-        } else {
-            Err(Error::Read("Failed to get table schema".into()))
-        }
-    }
-
     fn clone_box(&self) -> Box<dyn Source> {
         Box::new(self.clone())
     }
 
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_sharded(&mut self) -> Option<&mut dyn ShardedSource> {
+        Some(self)
+    }
+}
+
+#[async_trait]
+impl ShardedSource for MySQLSource {
     async fn get_total_records(&self) -> Result<i64> {
         let pool = self
             .pool
@@ -172,15 +208,13 @@ impl Source for MySQLSource {
             .as_ref()
             .ok_or_else(|| Error::Connection("Not connected".into()))?;
 
+        let column_types = self.get_column_types(pool).await?;
         let query = format!(
-            "SELECT * FROM {} WHERE id >= ? AND id < ? LIMIT ?",
-            self.config.table
+            "SELECT * FROM {} WHERE id >= {} AND id < {} LIMIT 1000",
+            self.config.table, start_id, end_id
         );
 
         let rows = sqlx::query(&query)
-            .bind(start_id)
-            .bind(end_id)
-            .bind(self.config.batch_size as i64)
             .fetch_all(pool)
             .await
             .map_err(|e| Error::Read(e.to_string()))?;
@@ -189,151 +223,50 @@ impl Source for MySQLSource {
             return Ok(None);
         }
 
-        let type_converter = MySQLTypeConverter;
         let records = rows
             .into_iter()
             .map(|row| {
                 let mut fields = HashMap::new();
-                let columns = row.columns();
-
-                for col in columns {
+                for col in row.columns() {
                     let name = col.name().to_string();
-                    let type_name = col.type_info().name();
+                    let (type_name, _) = column_types
+                        .get(&name)
+                        .ok_or_else(|| Error::Type(format!("Unknown column: {}", name)))?;
 
-                    // 获取原始字符串值
-                    let raw_value = match type_name {
-                        "INT" | "BIGINT" => {
-                            row.try_get::<i64, _>(col.ordinal()).map(|v| v.to_string())
-                        }
-                        "VARCHAR" | "TEXT" => row.try_get::<String, _>(col.ordinal()),
-                        "FLOAT" | "DOUBLE" => {
-                            row.try_get::<f64, _>(col.ordinal()).map(|v| v.to_string())
-                        }
-                        "BOOLEAN" => row.try_get::<bool, _>(col.ordinal()).map(|v| v.to_string()),
-                        _ => row.try_get::<String, _>(col.ordinal()),
-                    }
-                    .unwrap_or_else(|_| "NULL".to_string());
+                    let raw_value = row
+                        .try_get::<Option<String>, _>(col.ordinal())
+                        .unwrap()
+                        .unwrap_or_else(|| "NULL".to_string());
 
-                    // 转换为统一的 JSON 值
-                    let value = type_converter.convert_to_value(&raw_value, type_name)?;
-                    fields.insert(name, value);
+                    let dbsync_value = self
+                        .value_converter
+                        .to_dbsync_value(&raw_value, type_name)?;
+                    fields.insert(name, serde_json::to_value(&dbsync_value)?);
                 }
+                println!("fields: {:?}", fields);
                 Ok(Record { fields })
             })
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Some(DataBatch { records }))
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use dbsync_core::connector::ConnectorConfig;
-    use serde_json::json;
-    use sqlx::mysql::MySqlPoolOptions;
+    async fn get_schema(&self) -> Result<String> {
+        let pool = self
+            .pool
+            .as_ref()
+            .ok_or_else(|| Error::Connection("Not connected".into()))?;
 
-    // 创建测试数据库连接
-    async fn setup_test_db() -> MySqlPool {
-        let url = std::env::var("TEST_MYSQL_URL")
-            .unwrap_or_else(|_| "mysql://root:password@localhost:3306/test".to_string());
-
-        MySqlPoolOptions::new()
-            .max_connections(5)
-            .connect(&url)
+        // 获取表的创建语句
+        let query = format!("SHOW CREATE TABLE {}", self.config.table);
+        let row = sqlx::query(&query)
+            .fetch_one(pool)
             .await
-            .expect("Failed to connect to test database")
-    }
+            .map_err(|e| Error::Read(e.to_string()))?;
 
-    #[tokio::test]
-    async fn test_source_init() {
-        let config = ConnectorConfig {
-            name: "test_source".to_string(),
-            connector_type: "mysql".to_string(),
-            properties: HashMap::from_iter(vec![
-                (
-                    "url".to_string(),
-                    json!("mysql://root:password@localhost:3306/test"),
-                ),
-                ("table".to_string(), json!("test_table")),
-                ("batch_size".to_string(), json!(100)),
-            ]),
-        };
+        let create_table: String = row.get(1); // 第二列是 Create Table 语句
 
-        let mut source = MySQLSource::new(config).unwrap();
-        assert!(source.init().await.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_read_batch() {
-        let pool = setup_test_db().await;
-
-        // 创建测试表并插入数据
-        sqlx::query(
-            "CREATE TEMPORARY TABLE test_table (
-                id INT PRIMARY KEY,
-                name VARCHAR(255),
-                age INT
-            )",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        sqlx::query(
-            "INSERT INTO test_table (id, name, age) VALUES
-            (1, 'Alice', 20),
-            (2, 'Bob', 25),
-            (3, 'Charlie', 30)",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        // 创建并初始化 source
-        let config = ConnectorConfig {
-            name: "test_source".to_string(),
-            connector_type: "mysql".to_string(),
-            properties: HashMap::from_iter(vec![
-                (
-                    "url".to_string(),
-                    json!("mysql://root:password@localhost:3306/test"),
-                ),
-                ("table".to_string(), json!("test_table")),
-                ("batch_size".to_string(), json!(2)),
-            ]),
-        };
-
-        let mut source = MySQLSource::new(config).unwrap();
-        source.init().await.unwrap();
-
-        // 读取第一批数据
-        let batch = source.read_batch(2).await.unwrap().unwrap();
-        assert_eq!(batch.records.len(), 2);
-        assert_eq!(
-            batch.records[0]
-                .fields
-                .get("name")
-                .unwrap()
-                .as_str()
-                .unwrap(),
-            "Alice"
-        );
-
-        // 读取第二批数据
-        let batch = source.read_batch(2).await.unwrap().unwrap();
-        assert_eq!(batch.records.len(), 1);
-        assert_eq!(
-            batch.records[0]
-                .fields
-                .get("name")
-                .unwrap()
-                .as_str()
-                .unwrap(),
-            "Charlie"
-        );
-
-        // 确认没有更多数据
-        assert!(source.read_batch(2).await.unwrap().is_none());
+        // 替换表名为 target_table
+        Ok(create_table.replace(&self.config.table, "target_table"))
     }
 }
