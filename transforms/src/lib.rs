@@ -5,6 +5,7 @@ use dbsync_core::{
     error::{Error, Result},
 };
 use lazy_static::lazy_static;
+use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -66,5 +67,13 @@ impl Transform for FieldRenameTransform {
             .collect();
 
         Ok(DataBatch { records })
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn clone_box(&self) -> Box<dyn Transform> {
+        Box::new(self.clone())
     }
 }

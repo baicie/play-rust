@@ -78,7 +78,9 @@ pub trait ShardedSink: Sink {
 }
 
 #[async_trait]
-pub trait Transform: Send + Sync + Clone + 'static {
+pub trait Transform: Send + Sync + 'static {
+    fn as_any(&self) -> &dyn Any;
+    fn clone_box(&self) -> Box<dyn Transform>;
     async fn transform(&mut self, batch: DataBatch) -> Result<DataBatch>;
 }
 

@@ -19,16 +19,20 @@ impl Default for JobConfig {
     }
 }
 
-pub struct SyncJob<T: Transform> {
+pub struct SyncJob {
     source: Box<dyn ShardedSourceExt>,
-    transforms: Vec<T>,
+    transforms: Vec<Box<dyn Transform>>,
     sink: Box<dyn Sink>,
     config: JobConfig,
     metrics: Metrics,
 }
 
-impl<T: Transform> SyncJob<T> {
-    pub fn new(source: Box<dyn ShardedSourceExt>, transforms: Vec<T>, sink: Box<dyn Sink>) -> Self {
+impl SyncJob {
+    pub fn new(
+        source: Box<dyn ShardedSourceExt>,
+        transforms: Vec<Box<dyn Transform>>,
+        sink: Box<dyn Sink>,
+    ) -> Self {
         Self {
             source,
             transforms,
@@ -96,7 +100,7 @@ impl<T: Transform> SyncJob<T> {
         );
 
         // 并行写入数据
-        let worker_count = 3;
+        let worker_count = 10;
         let mut handles = Vec::new();
         let batch_size = batches.len() / worker_count;
 

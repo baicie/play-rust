@@ -64,36 +64,63 @@ impl Sink for MySQLSink {
     }
 
     async fn write_batch(&mut self, batch: DataBatch) -> Result<()> {
+        const OPTIMAL_BATCH_SIZE: usize = 500; // 每次插入500条记录
+
         let pool = self
             .pool
             .as_ref()
             .ok_or_else(|| Error::Connection("Not connected".into()))?;
+
+        if batch.records.is_empty() {
+            return Ok(());
+        }
 
         let mut tx = pool
             .begin()
             .await
             .map_err(|e| Error::Write(e.to_string()))?;
 
-        for record in batch.records {
-            let (columns, values): (Vec<_>, Vec<_>) = record.fields.into_iter().unzip();
-            let placeholders = (0..values.len())
-                .map(|_| "?")
+        // 获取第一条记录的字段名
+        let (columns, _) = batch.records[0]
+            .fields
+            .iter()
+            .map(|(k, v)| (k.clone(), v))
+            .unzip::<_, _, Vec<_>, Vec<_>>();
+
+        // 构建批量插入的 SQL
+        let placeholders = format!(
+            "({})",
+            std::iter::repeat("?")
+                .take(columns.len())
                 .collect::<Vec<_>>()
-                .join(", ");
+                .join(",")
+        );
+
+        // 将记录分成多个小批次
+        for chunk in batch.records.chunks(OPTIMAL_BATCH_SIZE) {
+            let values_placeholders = std::iter::repeat(&placeholders[..])
+                .take(chunk.len())
+                .collect::<Vec<_>>()
+                .join(",");
 
             let query = format!(
-                "INSERT INTO {} ({}) VALUES ({})",
+                "INSERT INTO {} ({}) VALUES {}",
                 self.config.table,
-                columns.join(", "),
-                placeholders
+                columns.join(","),
+                values_placeholders
             );
 
             let mut query_builder = sqlx::query(&query);
-            for (field_value, field_type) in values {
-                query_builder = query_builder.bind(
-                    self.value_converter
-                        .from_dbsync_value(&field_value, &field_type)?,
-                );
+
+            // 绑定这个小批次的值
+            for record in chunk {
+                for column in &columns {
+                    if let Some((value, field_type)) = record.fields.get(column) {
+                        let sql_value =
+                            self.value_converter.from_dbsync_value(value, field_type)?;
+                        query_builder = query_builder.bind(sql_value);
+                    }
+                }
             }
 
             query_builder

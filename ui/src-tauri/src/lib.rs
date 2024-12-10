@@ -7,7 +7,7 @@ fn greet(name: &str) -> String {
 use dbsync_core::plugin::PluginManager;
 use dbsync_core::{job::SyncJob, Config};
 use serde::Serialize;
-use sysinfo::{Cpu, System};
+use sysinfo::System;
 
 #[derive(Serialize)]
 pub struct SystemMetrics {
@@ -49,14 +49,8 @@ async fn create_sync_job(config: Config) -> Result<(), String> {
     plugin_manager.register_source("mysql", |config| {
         Ok(Box::new(dbsync_mysql::MySQLSource::new(config)?))
     });
-    plugin_manager.register_source("postgres", |config| {
-        Ok(Box::new(dbsync_postgres::PostgresSource::new(config)?))
-    });
     plugin_manager.register_sink("mysql", |config| {
         Ok(Box::new(dbsync_mysql::MySQLSink::new(config)?))
-    });
-    plugin_manager.register_sink("postgres", |config| {
-        Ok(Box::new(dbsync_postgres::PostgresSink::new(config)?))
     });
 
     // 创建并运行任务

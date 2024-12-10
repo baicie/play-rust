@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sink = plugin_manager.create_sink(config.sink)?;
 
     info!("Creating sync job...");
-    let mut job: SyncJob<FieldRenameTransform> = SyncJob::new(source, vec![], sink);
+    let mut job = SyncJob::new(source, vec![], sink);
 
     info!("Starting sync job...");
     job.run().await?;
